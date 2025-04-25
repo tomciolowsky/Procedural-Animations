@@ -8,7 +8,7 @@ class Head_node(pygame.sprite.Sprite):
         self.spawn_pos = pos
         self.direction = pygame.Vector2(1,1).normalize()
         self.prev_direction = pygame.Vector2()
-        self.speed = 250
+        self.speed = 150
         self.size = (size, size)
         # trying with different circle diameters AND different rect sizes
         self.image = pygame.Surface(self.size)
@@ -80,6 +80,7 @@ class Head_node(pygame.sprite.Sprite):
             self.rect.center += self.direction * self.speed * dt
         
         self.draw()
+
 
 class Body_node(Head_node):
     def __init__(self, pos, display_surf, size, groups):
@@ -185,7 +186,7 @@ class Body_node(Head_node):
         tail_head_vector.y = head_center[1] - fin_endpoint1
         tail_head_vector = tail_head_vector.normalize() if tail_head_vector else tail_head_vector
         
-        fin_rect_bottom += 10*tail_head_vector
+        fin_rect_bottom += 15*tail_head_vector
 
         self.draw_curve(fin_rect_top, fin_rect_control_point, fin_rect_bottom)
         self.draw_curve(fin_rect_top, fin_rect_control_point2, fin_rect_bottom)
@@ -202,14 +203,176 @@ class Body_node(Head_node):
             self.direction.x = (self.direction.x*80 + self.head_direction.x/80)
             self.direction.y = (self.direction.y*80 + self.head_direction.y/80)
             self.direction = self.direction.normalize() if self.direction else self.direction
-        # 
+        #
 
         self.distance_vector = -self.direction * 32 # vector from head to this node (*32 -> The nodes are spread evenly)
-
 
         self.rect.centerx = self.distance_vector[0] + self.head_pos[0]
         self.rect.centery = self.distance_vector[1] + self.head_pos[1]
 
+
+class LIZARD_node(Head_node): # TODO
+    def __init__(self, pos, display_surf, size, groups, has_legs=False):
+        super().__init__(pos, display_surf, size, groups)
+        self.direction = pygame.Vector2()
+        self.size = (size, size)
+        self.image = pygame.Surface(self.size)
+        self.image.set_colorkey("black")
+        self.theta = 0
+
+        # self.body_node_groups = groups
+        self.leg_nodes_sprites = pygame.sprite.Group()
+
+        # pygame.draw.circle(self.image, "white", (size/2, size/2), size/2, NODE_PARAMS['WIDTH']) # circle of this node
+        # pygame.draw.circle(self.image, "white", (size/2, size/2), 4, 4) # center of this node
+
+        self.rect = self.image.get_frect(center=self.spawn_pos)
+
+        if has_legs:
+            self.leg_size = 15
+            self.legs_array = []
+            for sign in [1, -1]:
+                self.get_leg_initial_pos(sign)
+                leg_bend = Leg_Node(pos=self.leg_initial_bend, display_surf=self.display_surf, size=self.leg_size, groups=self.leg_nodes_sprites)
+                leg_endnode = Leg_Node(pos=self.leg_initial_endpoint, display_surf=self.display_surf, size=self.leg_size, groups=self.leg_nodes_sprites)
+                self.legs_array.append((leg_bend, leg_endnode))
+
+            # print(self.legs_array)
+        else:
+            self.leg_initial_endpoint = None
+            self.legs_array = None
+
+    def get_head_pos(self, head_pos):
+        self.head_pos = head_pos
+
+    def get_head_direction(self, head_direction):
+        self.head_direction = head_direction
+        self.angle_constraint()
+    
+    def angle_constraint(self):
+        # calculate angle between node's and its head's vectors
+        dot = self.direction.x * self.head_direction.x + self.direction.y * self.head_direction.y
+        cos_theta = dot / (1 * 1) # lengths of vectors
+        cos_theta = max(min(cos_theta, 1), -1)
+        self.theta = math_degrees(acos(cos_theta))
+
+    def get_leg_initial_pos(self, sign):
+        rotated_Vector1 = self.rotate_vector(self.direction, sign, 80)
+        leg_initial_endpoint0 = (self.rect.centerx + (rotated_Vector1.x)*self.size[0]*1.5)
+        leg_initial_endpoint1 = (self.rect.centery + (rotated_Vector1.y)*self.size[0]*1.5)
+        self.leg_initial_endpoint = pygame.Vector2(leg_initial_endpoint0,leg_initial_endpoint1)
+
+        rotated_Vector2 = self.rotate_vector(self.direction, sign, 45)
+        leg_initial_bend0 = (self.rect.centerx + (rotated_Vector2.x)*self.size[0]*1.5)
+        leg_initial_bend1 = (self.rect.centery + (rotated_Vector2.y)*self.size[0]*1.5)
+        self.leg_initial_bend = pygame.Vector2(leg_initial_bend0,leg_initial_bend1)
+
+    def get_new_leg_endpoint(self, sign):
+        # leg NEW endpoint
+        rotated_Vector1 = self.rotate_vector(self.direction, sign, 90)
+        leg_new_endpoint0 = (self.rect.centerx + (rotated_Vector1.x)*self.size[0]*2)
+        leg_new_endpoint1 = (self.rect.centery + (rotated_Vector1.y)*self.size[0]*2)
+        self.leg_new_endpoint = pygame.Vector2(leg_new_endpoint0,leg_new_endpoint1)
+
+    def leg_update(self):
+        legs_coords_f = []
+
+        for sign in [1,-1]:
+            if sign == 1:
+                leg_node_pair = self.legs_array[0]
+                degs = (30, 150)
+            else:
+                leg_node_pair = self.legs_array[1]
+                degs = (150, 30)
+
+            legs_coords = [(self.rect.centerx + (self.direction.x*self.leg_size/2), self.rect.centery + (self.direction.y*self.leg_size/2))]
+            legs_coords0 = []
+            legs_coords1 = []
+            legs_coords2 = [(self.rect.centerx - (self.direction.x*self.leg_size/2), self.rect.centery - (self.direction.y*self.leg_size/2))]
+
+            leg_node_pair[0].update(dt, legs_coords0, legs_coords1, self.direction, degs[0], degs[1]) # Draw the legs
+            leg_node_pair[1].update(dt, legs_coords0, legs_coords1, self.direction, 90, 90) 
+            legs_coords1.reverse()
+            if sign == 1:
+                legs_coords = legs_coords + legs_coords0 + legs_coords1 + legs_coords2
+            else:
+                legs_coords = legs_coords2 + legs_coords0 + legs_coords1 + legs_coords
+            
+            legs_coords_f += legs_coords
+
+            self.get_new_leg_endpoint(sign) # get NEW leg endpoint
+
+            # pygame.draw.circle(self.display_surf, "green", self.leg_new_endpoint, 4, 4)
+            body_Vector = pygame.Vector2(self.rect.center)
+            if leg_node_pair[1].position_Vector.distance_to(self.leg_new_endpoint) >= 50 or leg_node_pair[1].position_Vector.distance_to(body_Vector) >= (self.size[0]/2)+50:
+                self.get_leg_initial_pos(sign) #updates the leg initial position
+                
+                leg_node_pair[0].get_new_pos(self.leg_initial_bend) # leg bend
+                leg_node_pair[1].get_new_pos(self.leg_initial_endpoint) # leg endnode
+
+        pygame.draw.polygon(self.display_surf, "orange", legs_coords_f) # Draw the body shape filled
+        #
+
+    def update(self, dt):
+        
+        self.direction.x =  self.head_pos[0] - self.rect.centerx # vectors from this node to its head
+        self.direction.y =  self.head_pos[1] - self.rect.centery
+        self.direction = self.direction.normalize() if self.direction else self.direction
+
+        # angle constraint
+        if abs(self.theta) > 45:
+            self.direction.x = (self.direction.x*80 + self.head_direction.x/80)
+            self.direction.y = (self.direction.y*80 + self.head_direction.y/80)
+            self.direction = self.direction.normalize() if self.direction else self.direction
+        #
+
+        # leg update (only for nodes that have legs)
+        if self.leg_initial_endpoint != None:
+            self.leg_update()
+            
+        self.distance_vector = -self.direction * 32 # vector from head to this node (*32 -> The nodes are spread evenly)
+
+        self.rect.centerx = self.distance_vector[0] + self.head_pos[0]
+        self.rect.centery = self.distance_vector[1] + self.head_pos[1]
+
+#
+class Leg_Node(Body_node): # TODO rewrite so that it has the direction and acts just like the body nodes
+    def __init__(self, pos, display_surf, size, groups):
+        super().__init__(pos, display_surf, size, groups)
+        self.size = (size, size)
+        self.image = pygame.Surface(self.size)
+        self.image.set_colorkey("black")
+        self.rect = self.image.get_frect(center=self.spawn_pos)
+        self.position_Vector = pygame.Vector2(self.rect.center)
+
+    def get_new_pos(self, new_pos):
+        self.new_pos = new_pos
+        self.rect.centerx = self.new_pos[0]
+        self.rect.centery = self.new_pos[1]
+        self.position_Vector = pygame.Vector2(self.rect.center)
+        
+    def update(self, dt, legs_coords0, legs_coords1, body_direction, degrees1, degrees2):
+
+        for sign2 in [1, -1]:
+
+            if sign2 == 1:
+                rotated_Vector1 = self.rotate_vector(body_direction, sign2, degrees1)
+                leg_dot0 = (self.rect.centerx + (rotated_Vector1.x)*self.size[0]/2)
+                leg_dot1 = (self.rect.centery + (rotated_Vector1.y)*self.size[0]/2)
+                leg_dot = (leg_dot0, leg_dot1)
+                legs_coords0.append(leg_dot)
+
+            else:
+                rotated_Vector2 = self.rotate_vector(body_direction, sign2, degrees2)
+                leg_dot20 = (self.rect.centerx + (rotated_Vector2.x)*self.size[0]/2)
+                leg_dot21 = (self.rect.centery + (rotated_Vector2.y)*self.size[0]/2)
+                leg_dot2 = (leg_dot20, leg_dot21)
+                legs_coords1.append(leg_dot2)
+
+        # pygame.draw.circle(self.display_surf, "green", self.rect.center, 4, 4) # draw the node center
+        # pygame.draw.circle(self.display_surf, "white", self.rect.center, self.size[0]/2, 4) # draw the circle-skeleton
+        
+#
 
 pygame.init()
 
@@ -230,6 +393,14 @@ def create_creature(creature_length, creature_body_array):
     for i in range(1, creature_length):
         Body_node((0, 0), display_surface, creature_body_array[i], (all_sprites, body_nodes_sprites))
 
+def create_lizard(creature_length, creature_body_array):
+    Head_node((500, 500), display_surface, creature_body_array[0], (all_sprites, head_nodes_sprites))
+    for i in range(1, creature_length):
+        if creature_body_array[i] == 30: # node with a leg
+            LIZARD_node((0, 0), display_surface, creature_body_array[i], (all_sprites, body_nodes_sprites), has_legs=True)
+        else: # node without a leg
+            LIZARD_node((0, 0), display_surface, creature_body_array[i], (all_sprites, body_nodes_sprites))
+
 # TODO random creation of interesting creatures:
 # import numpy as np
 # samples = np.random.lognormal(mean=3.5, sigma=0.4, size=14).astype(int)
@@ -238,9 +409,18 @@ def create_creature(creature_length, creature_body_array):
 # creature_body_array = [52, 58, 40, 60, 68, 71, 65, 50, 28, 19, 21, 13, 13, 7, 25]
 # creature_body_array = [25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25, 25]
 
-# FISH TODO
-creature_body_array = [40, 55, 54, 40, 25, 15, 10]
-create_creature(len(creature_body_array), creature_body_array)
+# MY_CREATURE = "Fish"
+MY_CREATURE = "Lizard"
+
+if MY_CREATURE == "Fish":
+    # FISH 
+    creature_body_array = [40, 55, 54, 40, 25, 15, 10]
+    create_creature(len(creature_body_array), creature_body_array)
+
+if MY_CREATURE == "Lizard":
+    # LIZARD
+    creature_body_array = [35, 25, 30, 25, 25, 25, 30, 20, 15, 10, 10, 5]
+    create_lizard(len(creature_body_array), creature_body_array)
 
 while running:
 
@@ -261,8 +441,7 @@ while running:
     dots_coords1 = []
     dots_coords2 = []
 
-    # Draw the dots / get body-shape points position
-    for head in head_nodes_sprites:
+    for head in head_nodes_sprites: # Draw the dots / get body-shape points position
         head.draw_dots(1, 0, display_surface, "red", dots_coords1, dots_coords2, yesAppend=True) # draw 0° peak-dot
         for sign in [1, -1]:
             degrees = 45
@@ -273,37 +452,37 @@ while running:
         for sign in [1, -1]:
             degrees = 90
             node.draw_dots(sign, degrees, display_surface, "red", dots_coords1, dots_coords2, yesAppend=True) # draw +- 90° dots
-
     
-    for node in body_nodes_sprites: # Draw the side-fins    
-        if node.size == (55,55):
-            for sign in [1, -1]:
-                node.draw_fins(sign, 55, 25)
-        if node.size == (25,25):
-            for sign in [1, -1]:
-                node.draw_fins(sign, 30, 10)
-
+    if MY_CREATURE == "Fish": # Draw the side-fins 
+        for node in body_nodes_sprites:    
+            if node.size == (55,55):
+                for sign in [1, -1]:
+                    node.draw_fins(sign, 55, 25)
+            if node.size == (25,25):
+                for sign in [1, -1]:
+                    node.draw_fins(sign, 30, 10)
 
     dots_coords2.reverse()
     dots_coords = dots_coords + dots_coords1 + dots_coords2
-    # pygame.draw.lines(display_surface, "red", True, dots_coords) # Draw the body shape
+    # pygame.draw.lines(display_surface, "red", True, dots_coords) # Draw the body shape NOT filled    
+
+    all_sprites.update(dt)
+
     pygame.draw.polygon(display_surface, "red", dots_coords) # Draw the body shape filled
 
-
-    for node in body_nodes_sprites: # Draw the tail-fins
-        if node.size == (10,10):
-            for head in head_nodes_sprites:
-                node.draw_tailfin(head.rect.center, 50, 8)
-        if node.size == (54,54):
-            for head in head_nodes_sprites:
-                node.draw_tailfin(head.rect.center, 60, 6)
+    if MY_CREATURE == "Fish": # Draw the tail-fins
+        for node in body_nodes_sprites: 
+            if node.size == (10,10):
+                for head in head_nodes_sprites:
+                    node.draw_tailfin(head.rect.center, 50, 8)
+            if node.size == (54,54):
+                for head in head_nodes_sprites:
+                    node.draw_tailfin(head.rect.center, 60, 6)
 
     # Draw eyes
     for head in head_nodes_sprites:
         for sign in [1, -1]:
             head.draw_dots(sign, 90, display_surface, "white", dots_coords1, dots_coords2, yesAppend=False) # draw the eyes
-
-    all_sprites.update(dt)
 
     body_nodes_sprites.draw(display_surface)
 
